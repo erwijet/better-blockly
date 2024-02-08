@@ -1,12 +1,50 @@
 {
   "name": "better-blockly",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./lib": {
+      "import": {
+        "types": "./dist/lib.d.mts",
+        "default": "./dist/lib.mjs"
+      },
+      "require": {
+        "types": "./dist/lib.js",
+        "default": "./dist/lib.d.ts"
+      }
+    }
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts src/lib.ts --format cjs,esm --dts"
+  },
+  "keywords": [
+    "blockly"
+  ],
+  "author": "Tyler Holewinski <tyler@holewinski.dev>",
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8.0.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@tsly/arr": "^1.4.0",
+    "@tsly/maybe": "^1.2.0"
+  },
+  "peerDependencies": {
+    "blockly": "^10.3.1"
+  }
 }
