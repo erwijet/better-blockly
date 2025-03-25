@@ -1,4 +1,4 @@
-import Blockly from "blockly";
+import * as Blockly from "blockly/core";
 import { maybe } from "@tsly/maybe";
 import {
   InputMap,
@@ -8,8 +8,12 @@ import {
   Field,
   BlockImpl,
   Content,
+  coerceToEntries,
+  compose,
+  BlocksRef,
 } from "./shared";
 import { ContentBuilder, ContentBuilderFn } from "./ContentBuilder";
+import { arr } from "@tsly/arr";
 
 export class BlockBuilder<
   BlockInputMap extends InputMap,
@@ -28,6 +32,7 @@ export class BlockBuilder<
   constructor(
     private name: string,
     private generator: Blockly.Generator,
+    private blocksRef: BlocksRef
   ) {
     this.#hue = 120;
     this.#nextType = "*";
@@ -144,7 +149,7 @@ export class BlockBuilder<
       inline = this.#inline,
       generator = this.generator;
 
-    Blockly.Blocks[this.name] = {
+    this.blocksRef.Blocks[this.name] = {
       init: function () {
         this.setColour(hue);
         this.setTooltip("");
@@ -174,7 +179,11 @@ export class BlockBuilder<
             if (input.type == "dropdown")
               handle = handle.appendField(
                 new Blockly.FieldDropdown(
-                  Object.entries(input.value) as [string, string][]
+                  maybe(input.value).take((value) =>
+                    typeof value == "function"
+                      ? () => coerceToEntries(value())
+                      : coerceToEntries(value)
+                  )
                 ),
                 input.key
               );
@@ -201,7 +210,7 @@ export class BlockBuilder<
 
           if (field.type == "slot") {
             const handle = this.appendValueInput(field.key).setCheck(
-              field.check
+              maybe(field.check).takeUnless(it => it == "*") ?? null
             );
             registerContent(handle, field.content);
           }
@@ -219,7 +228,7 @@ export class BlockBuilder<
 
     // note: blockly block definitions don't play well with typescript for generic blockly generators,
     // so we have to manually cast to any here :((
-    (generator as any)[this.name] = function (block: Blockly.Block) {
+    (generator as any).forBlock[this.name] = function (block: Blockly.Block) {
       const proxy = new Proxy(block, {
         get(target, p, _receiver) {
           for (const field of fields) {
@@ -253,6 +262,12 @@ export class BlockBuilder<
       if (typeof result == "object") return [result.value, result.order];
       if (outputType != null) return [result, 99];
 
+      const nextBlock = maybe(block.nextConnection)
+        ?.let((it) => it.targetBlock())
+        ?.let((it) => generator.blockToCode(it))
+        .take();
+
+      if (nextBlock) return [result, nextBlock].join("\n");
       return result;
     };
   }
@@ -262,6 +277,7 @@ type CheckType<T extends string> = T extends BuiltinType ? true : false;
 type TypeError<_ extends string> = { _err: never };
 
 export function createBlockBuilder<Type extends string = never>(config: {
+  Blockly: BlocksRef,
   generator: any;
   customTypes?: Type[];
 }): CheckType<Type> extends false
@@ -271,5 +287,5 @@ export function createBlockBuilder<Type extends string = never>(config: {
       BuiltinType | WildcardType | NeverType
     >}' is a reserved type indicator and may not be used`> {
   return ((blockName: string) =>
-    new BlockBuilder(blockName, config.generator)) as any;
+    new BlockBuilder(blockName, config.generator, config.Blockly ?? Blockly)) as any;
 }

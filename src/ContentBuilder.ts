@@ -1,5 +1,24 @@
-import { arr } from "@tsly/arr";
-import { Join, Content, InputMap } from "./shared";
+import {
+  Join,
+  Content,
+  InputMap,
+  Manufacturable,
+  DropdownOptionDef,
+} from "./shared";
+
+export type CustomView = (
+  this: ContentBuilder<any>,
+  key: string
+) => ContentBuilder<any>;
+
+export function createCustomContentView(
+  view: (opts: { key: string; builder: ContentBuilder<any> }) => unknown
+): CustomView {
+  return function (this: ContentBuilder<any>, key: string) {
+    view({ key, builder: this });
+    return this;
+  };
+}
 
 export class ContentBuilder<T extends InputMap> {
   constructor(private pushContent: (content: Content) => void) {}
@@ -13,18 +32,22 @@ export class ContentBuilder<T extends InputMap> {
     return this;
   }
 
+  custom<K extends string, const V extends string>(
+    key: K,
+    func: (this: ContentBuilder<T>, key: string) => unknown
+  ): ContentBuilder<Join<T, { [_ in K]: V }>> {
+    func.bind(this)(key);
+    return this;
+  }
+
   dropdown<K extends string, const V extends string>(
     key: K,
-    options: { [_ in string]?: V } | V[]
+    options: Manufacturable<DropdownOptionDef<V>>
   ) {
     this.pushContent({
       key,
       type: "dropdown",
-      value: Array.isArray(options)
-        ? arr(options)
-            .toObj((k) => k)
-            .take()
-        : options,
+      value: options,
     });
 
     return this as ContentBuilder<Join<T, { [_ in K]: V }>>;
