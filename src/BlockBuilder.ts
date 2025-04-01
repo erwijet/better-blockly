@@ -9,37 +9,45 @@ import {
   BlockImpl,
   Content,
   coerceToEntries,
-  compose,
   BlocksRef,
 } from "./shared";
 import { ContentBuilder, ContentBuilderFn } from "./ContentBuilder";
-import { arr } from "@tsly/arr";
+
+export type BlockBuilderPlugin<Meta extends object> = {
+  name: string,
+  blockWillRegister?: (builder: BlockBuilder<{}, any, any, boolean, Meta>) => unknown;
+  blockDidRegister?: (builder: BlockBuilder<{}, any, any, boolean, Meta>) => unknown;
+}
 
 export class BlockBuilder<
   BlockInputMap extends InputMap,
   SlotKey extends string,
   Type extends string,
   IsExpr extends boolean,
+  Meta extends object
 > {
   #prevType: Type | WildcardType | null;
   #nextType: Type | WildcardType | null;
   #outputType: Type | BuiltinType | null;
   #inline: boolean | null;
 
-  #hue: number;
+  #color: string | number;
   #fields: Field[];
+  #meta: object;
 
   constructor(
     private name: string,
     private generator: Blockly.Generator,
-    private blocksRef: BlocksRef
+    private blocksRef: BlocksRef,
+    private plugins: BlockBuilderPlugin<Meta>[]
   ) {
-    this.#hue = 120;
+    this.#color = 120;
     this.#nextType = "*";
     this.#prevType = "*";
     this.#outputType = null;
     this.#fields = [];
     this.#inline = null;
+    this.#meta = {}
   }
 
   follows(type: Type | WildcardType | NeverType) {
@@ -47,6 +55,15 @@ export class BlockBuilder<
     else this.#prevType = type;
 
     return this;
+  }
+
+  meta<K extends keyof Meta>(key: K, value: Meta[K]) {
+    this.#meta = { ...this.#meta, [key]: value }
+    return this
+  }
+
+  getMeta(): Partial<Meta> {
+    return this.#meta;
   }
 
   preceeds(type: Type | WildcardType | NeverType) {
@@ -57,7 +74,12 @@ export class BlockBuilder<
   }
 
   hue(hue: number) {
-    this.#hue = hue;
+    this.#color = hue;
+    return this;
+  }
+
+  color(hueOrHex: number | string) {
+    this.#color = hueOrHex;
     return this;
   }
 
@@ -73,15 +95,15 @@ export class BlockBuilder<
 
   outputs(
     type: Type | BuiltinType
-  ): BlockBuilder<BlockInputMap, SlotKey, Type, true> {
+  ): BlockBuilder<BlockInputMap, SlotKey, Type, true, Meta> {
     this.#outputType = type;
     this.#nextType = null;
     this.#prevType = null;
-    return this as BlockBuilder<BlockInputMap, SlotKey, Type, true>;
+    return this as BlockBuilder<BlockInputMap, SlotKey, Type, true, Meta>;
   }
 
   content<NextInputMap extends InputMap>(
-    builderFn: ContentBuilderFn<BlockInputMap, NextInputMap>
+    builderFn: ContentBuilderFn<BlockInputMap, NextInputMap, Type>
   ) {
     const field: Field = {
       type: "inputOnly",
@@ -92,14 +114,14 @@ export class BlockBuilder<
 
     this.#fields.push(field);
 
-    return this as unknown as BlockBuilder<NextInputMap, SlotKey, Type, IsExpr>;
+    return this as unknown as BlockBuilder<NextInputMap, SlotKey, Type, IsExpr, Meta>;
   }
 
   slot<K extends string, NextInputMap extends InputMap = BlockInputMap>(
     key: K,
     def: {
       allow: Type | BuiltinType | WildcardType;
-      content: ContentBuilderFn<BlockInputMap, NextInputMap>;
+      content: ContentBuilderFn<BlockInputMap, NextInputMap, Type>;
     }
   ) {
     const field: Field = {
@@ -117,7 +139,8 @@ export class BlockBuilder<
       NextInputMap,
       SlotKey | K,
       Type,
-      IsExpr
+      IsExpr,
+      Meta
     >;
   }
 
@@ -131,7 +154,7 @@ export class BlockBuilder<
       check: opts.allow,
     });
 
-    return this as BlockBuilder<BlockInputMap, SlotKey | K, Type, IsExpr>;
+    return this as BlockBuilder<BlockInputMap, SlotKey | K, Type, IsExpr, Meta>;
   }
 
   impl(
@@ -141,8 +164,12 @@ export class BlockBuilder<
       ? string | { value: string; order: number }
       : string
   ): void {
+    for (const plugin of this.plugins) {
+      plugin.blockWillRegister?.(this);
+    }
+
     const fields = this.#fields,
-      hue = this.#hue,
+      color = this.#color,
       nextType = this.#nextType,
       prevType = this.#prevType,
       outputType = this.#outputType,
@@ -151,16 +178,16 @@ export class BlockBuilder<
 
     this.blocksRef.Blocks[this.name] = {
       init: function () {
-        this.setColour(hue);
+        this.setColour(color);
         this.setTooltip("");
         this.setHelpUrl("");
 
         maybe(nextType)?.take((it) => {
-          this.setNextStatement(true, it == "*" ? null : it);
+          this.setNextStatement(true, it);
         });
 
         maybe(prevType)?.take((it) =>
-          this.setPreviousStatement(true, it == "*" ? null : it)
+          this.setPreviousStatement(true, it)
         );
 
         maybe(outputType)?.take((it) => {
@@ -199,6 +226,9 @@ export class BlockBuilder<
                 new Blockly.FieldTextInput(input.value),
                 input.key
               );
+
+            if (input.type == "variable")
+              handle = handle.appendField(new Blockly.FieldVariable(null, undefined, input.varTypes, input.varTypes.at(0)), input.key)
           }
         };
 
@@ -270,22 +300,37 @@ export class BlockBuilder<
       if (nextBlock) return [result, nextBlock].join("\n");
       return result;
     };
+
+    for (const plugin of this.plugins) {
+      plugin.blockDidRegister?.(this);
+    }
   }
 }
 
 type CheckType<T extends string> = T extends BuiltinType ? true : false;
 type TypeError<_ extends string> = { _err: never };
 
-export function createBlockBuilder<Type extends string = never>(config: {
+type Fn<P> = (p: P) => unknown;
+export type IntersectUnion<Union> = (Union extends Union ? Fn<Union> : never) extends Fn<
+  infer Intersection
+>
+  ? Intersection
+  : never;
+
+type InferMeta<Plugin extends BlockBuilderPlugin<object>> =
+  IntersectUnion<Plugin extends BlockBuilderPlugin<infer Meta> ? Meta : never>;
+
+export function createBlockBuilder<Type extends string = never, Plugin extends BlockBuilderPlugin<object> = BlockBuilderPlugin<object>>(config: {
   Blockly: BlocksRef,
   generator: any;
   customTypes?: Type[];
+  plugins?: Plugin[],
 }): CheckType<Type> extends false
-  ? (blockName: string) => BlockBuilder<{}, "", Type, false>
+  ? (blockName: string) => BlockBuilder<{}, "", Type, false, InferMeta<Plugin> & object>
   : TypeError<`'${Extract<
       Type,
       BuiltinType | WildcardType | NeverType
     >}' is a reserved type indicator and may not be used`> {
   return ((blockName: string) =>
-    new BlockBuilder(blockName, config.generator, config.Blockly ?? Blockly)) as any;
+    new BlockBuilder(blockName, config.generator, config.Blockly ?? Blockly, config.plugins ?? [])) as any;
 }

@@ -7,20 +7,20 @@ import {
 } from "./shared";
 
 export type CustomView = (
-  this: ContentBuilder<any>,
+  this: ContentBuilder<any, string>,
   key: string
-) => ContentBuilder<any>;
+) => ContentBuilder<any, string>;
 
 export function createCustomContentView(
-  view: (opts: { key: string; builder: ContentBuilder<any> }) => unknown
+  view: (opts: { key: string; builder: ContentBuilder<any, string> }) => unknown
 ): CustomView {
-  return function (this: ContentBuilder<any>, key: string) {
+  return function (this: ContentBuilder<any, string>, key: string) {
     view({ key, builder: this });
     return this;
   };
 }
 
-export class ContentBuilder<T extends InputMap> {
+export class ContentBuilder<T extends InputMap, Type extends string> {
   constructor(private pushContent: (content: Content) => void) {}
 
   text(value: string) {
@@ -34,8 +34,8 @@ export class ContentBuilder<T extends InputMap> {
 
   custom<K extends string, const V extends string>(
     key: K,
-    func: (this: ContentBuilder<T>, key: string) => unknown
-  ): ContentBuilder<Join<T, { [_ in K]: V }>> {
+    func: (this: ContentBuilder<T, Type>, key: string) => unknown
+  ): ContentBuilder<Join<T, { [_ in K]: V }>, Type> {
     func.bind(this)(key);
     return this;
   }
@@ -50,7 +50,16 @@ export class ContentBuilder<T extends InputMap> {
       value: options,
     });
 
-    return this as ContentBuilder<Join<T, { [_ in K]: V }>>;
+    return this as ContentBuilder<Join<T, { [_ in K]: V }>, Type>;
+  }
+
+  variable<K extends string>(key: K, opts: { types: Type[] }) {
+    this.pushContent({
+      key,
+      type: 'variable',
+      varTypes: opts.types
+    });
+    return this as ContentBuilder<Join<T, { [_ in K]: string }>, Type>
   }
 
   number<K extends string>(key: K, value: number) {
@@ -60,7 +69,7 @@ export class ContentBuilder<T extends InputMap> {
       value,
     });
 
-    return this as ContentBuilder<Join<T, { [_ in K]: number }>>;
+    return this as ContentBuilder<Join<T, { [_ in K]: number }>, Type>;
   }
 
   textbox<K extends string>(key: K, value: string) {
@@ -70,11 +79,12 @@ export class ContentBuilder<T extends InputMap> {
       value,
     });
 
-    return this as ContentBuilder<Join<T, { [_ in K]: string }>>;
+    return this as ContentBuilder<Join<T, { [_ in K]: string }>, Type>;
   }
 }
 
 export type ContentBuilderFn<
   PrevFieldMap extends InputMap,
   NextFieldMap extends InputMap,
-> = (view: ContentBuilder<PrevFieldMap>) => ContentBuilder<NextFieldMap>;
+  Type extends string
+> = (view: ContentBuilder<PrevFieldMap, Type>) => ContentBuilder<NextFieldMap, Type>;

@@ -1,3 +1,5 @@
+import { BlockBuilder } from "./BlockBuilder";
+
 export type Join<A extends object, B extends object> = {
   [k in keyof A | keyof B]: k extends keyof A
     ? A[k]
@@ -34,6 +36,7 @@ export type DropdownOptionDef<V extends string> = V[] | { [_ in string]?: V };
 
 export type Content =
   | { type: "text"; value: string }
+  | { type: "variable", key: string, varTypes: string[] }
   | {
       type: "dropdown";
       key: string;

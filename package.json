@@ -1,6 +1,6 @@
 {
   "name": "better-blockly",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "",
   "exports": {
     ".": {
@@ -19,8 +19,8 @@
         "default": "./dist/lib.mjs"
       },
       "require": {
-        "types": "./dist/lib.js",
-        "default": "./dist/lib.d.ts"
+        "types": "./dist/lib.d.ts",
+        "default": "./dist/lib.js"
       }
     }
   },
