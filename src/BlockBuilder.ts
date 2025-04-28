@@ -39,7 +39,8 @@ export class BlockBuilder<
     private name: string,
     private generator: Blockly.Generator,
     private blocksRef: BlocksRef,
-    private plugins: BlockBuilderPlugin<Meta>[]
+    private plugins: BlockBuilderPlugin<Meta>[],
+    private variables?: { getDefaultVariableName(type: string): string | null }
   ) {
     this.#color = 120;
     this.#nextType = "*";
@@ -174,7 +175,8 @@ export class BlockBuilder<
       prevType = this.#prevType,
       outputType = this.#outputType,
       inline = this.#inline,
-      generator = this.generator;
+      generator = this.generator,
+      varConf = this.variables;
 
     this.blocksRef.Blocks[this.name] = {
       init: function () {
@@ -228,7 +230,7 @@ export class BlockBuilder<
               );
 
             if (input.type == "variable")
-              handle = handle.appendField(new Blockly.FieldVariable(null, undefined, input.varTypes, input.varTypes.at(0)), input.key)
+              handle = handle.appendField(new Blockly.FieldVariable(maybe(input.varTypes.at(0))?.take(type => varConf?.getDefaultVariableName(type)) ?? null, undefined, input.varTypes, input.varTypes.at(0)), input.key)
           }
         };
 
@@ -324,6 +326,9 @@ export function createBlockBuilder<Type extends string = never, Plugin extends B
   Blockly: BlocksRef,
   generator: any;
   customTypes?: Type[];
+  variables?: {
+    getDefaultVariableName(type: string): string | null
+  }
   plugins?: Plugin[],
 }): CheckType<Type> extends false
   ? (blockName: string) => BlockBuilder<{}, "", Type, false, InferMeta<Plugin> & object>
@@ -332,5 +337,5 @@ export function createBlockBuilder<Type extends string = never, Plugin extends B
       BuiltinType | WildcardType | NeverType
     >}' is a reserved type indicator and may not be used`> {
   return ((blockName: string) =>
-    new BlockBuilder(blockName, config.generator, config.Blockly ?? Blockly, config.plugins ?? [])) as any;
+    new BlockBuilder(blockName, config.generator, config.Blockly ?? Blockly, config.plugins ?? [], config.variables)) as any;
 }
