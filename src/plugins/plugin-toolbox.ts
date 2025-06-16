@@ -1,20 +1,25 @@
 import { maybe } from "@tsly/maybe";
 import { BlockBuilderPlugin } from "lib";
-import { ToolboxDefinition } from "blockly/core/utils/toolbox";
+import { ToolboxDefinition, ToolboxItemInfo } from "blockly/core/utils/toolbox";
 
 type ToolboxPluginConfig<Category extends string> = {
-    categories: Record<Category, { color: number | string }>
+    categories: Record<Category, { color: number | string }>,
+    contents?: ToolboxItemInfo[]
 }
 
-type ShadowConfig = Record<string, { blockType: string, fields: Record<string, any> }>
+type ShadowConfig = Record<string, { blockType: string, fields: Record<string, any>, inputs?: ShadowConfig }>
 
 export function createToolboxPlugin<Category extends string>(config: ToolboxPluginConfig<Category>) {
     let store: Record<string, { category?: Category, shadow?: ShadowConfig  }>= {}
 
+    function toShadowToolboxConfig(conf: ShadowConfig): any {
+        return Object.fromEntries(Object.entries(conf).map(([target, { blockType, fields, inputs }]) => [target, { shadow: { type: blockType, fields, inputs: toShadowToolboxConfig(inputs ?? {}) } }]))
+    }
+
     return {
         buildToolbox(): ToolboxDefinition {
             return {
-                contents: Object.keys(config.categories).map((category) => ({
+                contents: (Object.keys(config.categories).map((category) => ({
                     kind: "category",
                     name: category,
                     colour: config.categories[category as Category].color,
@@ -23,10 +28,10 @@ export function createToolboxPlugin<Category extends string>(config: ToolboxPlug
                         .map((key) => ({
                             kind: "block",
                             type: key,
-                            inputs: Object.fromEntries(Object.entries(store[key].shadow ?? {}).map(([target, { blockType, fields }]) => [target, { shadow: { type: blockType, fields } }]))
+                            inputs: toShadowToolboxConfig(store[key].shadow ?? {})
                         }))
-                }))
-            }
+                })) as ToolboxItemInfo[]).concat(config.contents ?? [])
+            };
         },
 
         register(): BlockBuilderPlugin<{ category: Category, shadow: ShadowConfig }> {
