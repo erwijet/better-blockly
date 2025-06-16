@@ -12,10 +12,11 @@ import {
   BlocksRef,
 } from "./shared";
 import { ContentBuilder, ContentBuilderFn } from "./ContentBuilder";
+import { BlockDefinition } from "blockly/core/blocks";
 
 export type BlockBuilderPlugin<Meta extends object> = {
   name: string,
-  blockWillRegister?: (builder: BlockBuilder<{}, any, any, boolean, Meta>) => unknown;
+  blockWillRegister?: (builder: BlockBuilder<{}, any, any, boolean, Meta>, ctx: { _setBlocklyDefinitionProperty: (k: string, v: any) => void, _getBlocklyDefinitionProperty: (k: string) => any }) => unknown;
   blockDidRegister?: (builder: BlockBuilder<{}, any, any, boolean, Meta>) => unknown;
 }
 
@@ -165,8 +166,15 @@ export class BlockBuilder<
       ? string | { value: string; order: number }
       : string
   ): void {
+    const additionalPluginDefinedBlocklyProperties = new Map();
+
     for (const plugin of this.plugins) {
-      plugin.blockWillRegister?.(this);
+      const ctx = { 
+        _setBlocklyDefinitionProperty: (k: string, v: any) => additionalPluginDefinedBlocklyProperties.set(k, v), 
+        _getBlocklyDefinitionProperty: (k: string) => additionalPluginDefinedBlocklyProperties.get(k)
+      }
+
+      plugin.blockWillRegister?.(this, ctx);
     }
 
     const fields = this.#fields,
@@ -256,6 +264,7 @@ export class BlockBuilder<
 
         fields.forEach(registerField);
       },
+      ...Object.fromEntries(additionalPluginDefinedBlocklyProperties)
     };
 
     // note: blockly block definitions don't play well with typescript for generic blockly generators,
